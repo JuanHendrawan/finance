@@ -1,4 +1,24 @@
-// script.js
+// script.js - FinanceTracker with Firebase
+
+// Firebase configuration - GANTI DENGAN KONFIGURASI ANDA SENDIRI
+const firebaseConfig = {
+    apiKey: "your-api-key-here",
+    authDomain: "your-project-id.firebaseapp.com",
+    projectId: "your-project-id",
+    storageBucket: "your-project-id.appspot.com",
+    messagingSenderId: "your-sender-id",
+    appId: "your-app-id"
+};
+
+// Initialize Firebase
+try {
+    firebase.initializeApp(firebaseConfig);
+} catch (error) {
+    console.log("Firebase already initialized");
+}
+
+const auth = firebase.auth();
+const db = firebase.firestore();
 
 // --- STRUKTUR KATEGORI BARU ---
 const incomeCategories = [
@@ -52,7 +72,6 @@ const expenseCategories = [
 ];
 // --- AKHIR STRUKTUR KATEGORI ---
 
-
 // Global variables
 let currentUser = null;
 let transactions = [];
@@ -60,23 +79,34 @@ let budgets = [];
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', function() {
-    const savedUser = localStorage.getItem('currentUser');
-
-    if (document.getElementById('app')) {
-        if (savedUser) {
-            currentUser = JSON.parse(savedUser);
-            loadSavedData();
+    // Check Firebase auth state
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            // User is signed in
+            currentUser = {
+                uid: user.uid,
+                email: user.email,
+                name: user.displayName || user.email.split('@')[0]
+            };
+            
+            await loadUserData();
+            updateUI();
+            
+            // Redirect from login page to dashboard
+            if (window.location.pathname.includes('index.html') || window.location.pathname === '/') {
+                window.location.href = 'dashboard.html';
+            }
         } else {
-            window.location.href = 'index.html';
+            // User is signed out
+            currentUser = null;
+            
+            // Redirect to login if not on auth page
+            if (!window.location.pathname.includes('index.html') && window.location.pathname !== '/') {
+                window.location.href = 'index.html';
+            }
         }
-    } else if (document.getElementById('authModal')) {
-        if (savedUser) {
-            window.location.href = 'dashboard.html';
-        }
-        document.getElementById('loginForm').addEventListener('submit', handleLogin);
-        document.getElementById('registerForm').addEventListener('submit', handleRegister);
-    }
-    
+    });
+
     // Event listeners for transaction form
     if (document.getElementById('transactionForm')) {
         document.getElementById('transactionForm').addEventListener('submit', addTransaction);
@@ -84,12 +114,97 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('transactionType').addEventListener('change', populateMainCategoryOptions);
         document.getElementById('transactionMainCategory').addEventListener('change', () => populateSubCategoryOptions());
     }
+    
     // Event listeners for budget form
     if (document.getElementById('budgetForm')) {
         document.getElementById('budgetForm').addEventListener('submit', addBudget);
         document.getElementById('budgetMainCategory').addEventListener('change', () => populateSubCategoryOptions('budget'));
     }
+    
+    // Event listener for change password form
+    if (document.getElementById('changePasswordForm')) {
+        document.getElementById('changePasswordForm').addEventListener('submit', handleChangePassword);
+    }
 });
+
+// --- FIREBASE AUTHENTICATION FUNCTIONS ---
+async function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    try {
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        console.log("User logged in:", userCredential.user);
+    } catch (error) {
+        alert('Login failed: ' + error.message);
+    }
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+    const name = document.getElementById('registerName').value;
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (password !== confirmPassword) {
+        alert('Passwords do not match!');
+        return;
+    }
+    
+    try {
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        await userCredential.user.updateProfile({
+            displayName: name
+        });
+        
+        // Create user document in Firestore
+        await db.collection('users').doc(userCredential.user.uid).set({
+            name: name,
+            email: email,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        alert('Registration successful!');
+        switchAuthTab('login');
+    } catch (error) {
+        alert('Registration failed: ' + error.message);
+    }
+}
+
+async function logout() {
+    try {
+        await auth.signOut();
+        currentUser = null;
+        transactions = [];
+        budgets = [];
+        window.location.href = 'index.html';
+    } catch (error) {
+        console.error('Logout error:', error);
+    }
+}
+
+function switchAuthTab(tab) {
+    const loginBtn = document.querySelector('.tab-btn:nth-child(1)');
+    const registerBtn = document.querySelector('.tab-btn:nth-child(2)');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    
+    if (tab === 'login') {
+        loginBtn.classList.add('active');
+        registerBtn.classList.remove('active');
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+        document.getElementById('authTitle').textContent = 'Login';
+    } else {
+        loginBtn.classList.remove('active');
+        registerBtn.classList.add('active');
+        loginForm.classList.add('hidden');
+        registerForm.classList.remove('hidden');
+        document.getElementById('authTitle').textContent = 'Register';
+    }
+}
 
 // --- FUNGSI BARU UNTUK DROPDOWN DINAMIS ---
 function populateMainCategoryOptions() {
@@ -137,102 +252,400 @@ function populateSubCategoryOptions(formType = 'transaction') {
     }
 }
 
-// Authentication Functions (Sama seperti sebelumnya, tidak ada perubahan)
-function handleLogin(e) { e.preventDefault(); const email = document.getElementById('loginEmail').value; const password = document.getElementById('loginPassword').value; const users = JSON.parse(localStorage.getItem('users') || '[]'); const user = users.find(u => u.email === email && u.password === password); if (user) { currentUser = user; localStorage.setItem('currentUser', JSON.stringify(user)); window.location.href = 'dashboard.html'; } else { alert('Invalid email or password!'); } }
-function handleRegister(e) { e.preventDefault(); const name = document.getElementById('registerName').value; const email = document.getElementById('registerEmail').value; const password = document.getElementById('registerPassword').value; const confirmPassword = document.getElementById('confirmPassword').value; if (password !== confirmPassword) { alert('Passwords do not match!'); return; } const users = JSON.parse(localStorage.getItem('users') || '[]'); if (users.some(u => u.email === email)) { alert('Email already registered!'); return; } const newUser = { name, email, password }; users.push(newUser); localStorage.setItem('users', JSON.stringify(users)); alert('Registration successful! Please login.'); switchAuthTab('login'); }
-function logout() { localStorage.removeItem('currentUser'); window.location.href = 'index.html'; }
-function switchAuthTab(tab) { const loginBtn = document.querySelector('.tab-btn:nth-child(1)'); const registerBtn = document.querySelector('.tab-btn:nth-child(2)'); const loginForm = document.getElementById('loginForm'); const registerForm = document.getElementById('registerForm'); if (tab === 'login') { loginBtn.classList.add('active'); registerBtn.classList.remove('active'); loginForm.classList.remove('hidden'); registerForm.classList.add('hidden'); document.getElementById('authTitle').textContent = 'Login'; } else { loginBtn.classList.remove('active'); registerBtn.classList.add('active'); loginForm.classList.add('hidden'); registerForm.classList.remove('hidden'); document.getElementById('authTitle').textContent = 'Register'; } }
+// --- FIREBASE DATA FUNCTIONS ---
+async function loadUserData() {
+    if (!currentUser) return;
+    
+    try {
+        // Load transactions
+        const transactionsSnapshot = await db.collection('users')
+            .doc(currentUser.uid)
+            .collection('transactions')
+            .orderBy('date', 'desc')
+            .get();
+        
+        transactions = transactionsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
-// App Functions
-function updateUI() { if (currentUser) { const userNameEl = document.getElementById('userName'); if (userNameEl) userNameEl.textContent = currentUser.name; const profileNameEl = document.getElementById('profileName'); if(profileNameEl) profileNameEl.textContent = currentUser.name; const profileEmailEl = document.getElementById('profileEmail'); if(profileEmailEl) profileEmailEl.textContent = currentUser.email; } updateDashboard(); renderTransactions(); renderBudgets(); updateReports(); }
-function handleChangePassword(e) { e.preventDefault(); const currentPassword = document.getElementById('currentPassword').value; const newPassword = document.getElementById('newPassword').value; const confirmNewPassword = document.getElementById('confirmNewPassword').value; if (newPassword !== confirmNewPassword) { alert('New passwords do not match!'); return; } const users = JSON.parse(localStorage.getItem('users') || '[]'); const userIndex = users.findIndex(u => u.email === currentUser.email); if (users[userIndex].password !== currentPassword) { alert('Current password is incorrect!'); return; } users[userIndex].password = newPassword; localStorage.setItem('users', JSON.stringify(users)); currentUser.password = newPassword; localStorage.setItem('currentUser', JSON.stringify(currentUser)); alert('Password changed successfully!'); document.getElementById('changePasswordForm').reset(); }
+        // Load budgets
+        const budgetsSnapshot = await db.collection('users')
+            .doc(currentUser.uid)
+            .collection('budgets')
+            .get();
+        
+        budgets = budgetsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        
+    } catch (error) {
+        console.error("Error loading user data:", error);
+    }
+}
 
-// Transaction Functions
-function showAddTransactionModal() { document.getElementById('addTransactionModal').classList.remove('hidden'); document.getElementById('transactionForm').reset(); document.getElementById('transactionDate').valueAsDate = new Date(); populateMainCategoryOptions(); }
-function closeAddTransactionModal() { document.getElementById('addTransactionModal').classList.add('hidden'); }
-function addTransaction(e) {
+async function saveTransaction(transaction) {
+    if (!currentUser) return null;
+    
+    try {
+        const docRef = await db.collection('users')
+            .doc(currentUser.uid)
+            .collection('transactions')
+            .add(transaction);
+        
+        return docRef.id;
+    } catch (error) {
+        console.error("Error saving transaction:", error);
+        return null;
+    }
+}
+
+async function deleteTransactionFromFirebase(transactionId) {
+    if (!currentUser) return;
+    
+    try {
+        await db.collection('users')
+            .doc(currentUser.uid)
+            .collection('transactions')
+            .doc(transactionId)
+            .delete();
+    } catch (error) {
+        console.error("Error deleting transaction:", error);
+    }
+}
+
+async function saveBudget(budget) {
+    if (!currentUser) return null;
+    
+    try {
+        const docRef = await db.collection('users')
+            .doc(currentUser.uid)
+            .collection('budgets')
+            .add(budget);
+        
+        return docRef.id;
+    } catch (error) {
+        console.error("Error saving budget:", error);
+        return null;
+    }
+}
+
+async function deleteBudgetFromFirebase(budgetId) {
+    if (!currentUser) return;
+    
+    try {
+        await db.collection('users')
+            .doc(currentUser.uid)
+            .collection('budgets')
+            .doc(budgetId)
+            .delete();
+    } catch (error) {
+        console.error("Error deleting budget:", error);
+    }
+}
+
+// --- APP FUNCTIONS ---
+function updateUI() {
+    if (currentUser) {
+        const userNameEl = document.getElementById('userName');
+        if (userNameEl) userNameEl.textContent = currentUser.name;
+        
+        const profileNameEl = document.getElementById('profileName');
+        if(profileNameEl) profileNameEl.textContent = currentUser.name;
+        
+        const profileEmailEl = document.getElementById('profileEmail');
+        if(profileEmailEl) profileEmailEl.textContent = currentUser.email;
+    }
+    
+    updateDashboard();
+    renderTransactions();
+    renderBudgets();
+    updateReports();
+}
+
+async function handleChangePassword(e) {
     e.preventDefault();
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+    
+    if (newPassword !== confirmNewPassword) {
+        alert('New passwords do not match!');
+        return;
+    }
+    
+    try {
+        // Re-authenticate user
+        const user = auth.currentUser;
+        const credential = firebase.auth.EmailAuthProvider.credential(
+            user.email, 
+            currentPassword
+        );
+        
+        await user.reauthenticateWithCredential(credential);
+        await user.updatePassword(newPassword);
+        
+        alert('Password changed successfully!');
+        document.getElementById('changePasswordForm').reset();
+    } catch (error) {
+        alert('Error changing password: ' + error.message);
+    }
+}
+
+// --- TRANSACTION FUNCTIONS ---
+function showAddTransactionModal() {
+    document.getElementById('addTransactionModal').classList.remove('hidden');
+    document.getElementById('transactionForm').reset();
+    document.getElementById('transactionDate').valueAsDate = new Date();
+    populateMainCategoryOptions();
+}
+
+function closeAddTransactionModal() {
+    document.getElementById('addTransactionModal').classList.add('hidden');
+}
+
+async function addTransaction(e) {
+    e.preventDefault();
+    
     const transaction = {
-        id: Date.now(),
         type: document.getElementById('transactionType').value,
         mainCategory: document.getElementById('transactionMainCategory').value,
         subCategory: document.getElementById('transactionSubCategory').value,
         amount: parseFloat(document.getElementById('transactionAmount').value),
         description: document.getElementById('transactionDescription').value,
-        date: document.getElementById('transactionDate').value
+        date: document.getElementById('transactionDate').value,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    transactions.unshift(transaction);
-    saveData();
-    renderTransactions();
-    closeAddTransactionModal();
+    
+    const transactionId = await saveTransaction(transaction);
+    
+    if (transactionId) {
+        transactions.unshift({ id: transactionId, ...transaction });
+        updateUI();
+        closeAddTransactionModal();
+    } else {
+        alert('Error saving transaction. Please try again.');
+    }
 }
-function deleteTransaction(id) { transactions = transactions.filter(t => t.id !== id); saveData(); renderTransactions(); }
+
+async function deleteTransaction(id) {
+    if (confirm('Are you sure you want to delete this transaction?')) {
+        await deleteTransactionFromFirebase(id);
+        transactions = transactions.filter(t => t.id !== id);
+        updateUI();
+    }
+}
+
 function renderTransactions() {
     const tbody = document.getElementById('transactionsBody');
     if (!tbody) return;
-    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-    const typeFilter = document.getElementById('typeFilter').value;
-    let filteredTransactions = transactions.filter(t => { const searchMatch = t.description.toLowerCase().includes(searchTerm) || t.subCategory.toLowerCase().includes(searchTerm) || t.mainCategory.toLowerCase().includes(searchTerm); const typeMatch = typeFilter === 'all' || t.type === typeFilter; return searchMatch && typeMatch; });
-    tbody.innerHTML = filteredTransactions.map(t => `<tr><td>${t.date}</td><td>${t.subCategory} <br><small style="color: #888;">${t.mainCategory}</small></td><td>${t.description}</td><td class="${t.type}">${t.type === 'income' ? '+' : '-'} Rp${t.amount.toLocaleString('id-ID')}</td><td><button class="action-btn" onclick="deleteTransaction(${t.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('');
+    
+    const searchTerm = document.getElementById('searchInput')?.value.toLowerCase() || '';
+    const typeFilter = document.getElementById('typeFilter')?.value || 'all';
+    
+    let filteredTransactions = transactions.filter(t => {
+        const searchMatch = 
+            t.description.toLowerCase().includes(searchTerm) || 
+            t.subCategory.toLowerCase().includes(searchTerm) || 
+            t.mainCategory.toLowerCase().includes(searchTerm);
+        const typeMatch = typeFilter === 'all' || t.type === typeFilter;
+        return searchMatch && typeMatch;
+    });
+    
+    tbody.innerHTML = filteredTransactions.map(t => `
+        <tr>
+            <td>${t.date}</td>
+            <td>${t.subCategory} <br><small style="color: #888;">${t.mainCategory}</small></td>
+            <td>${t.description}</td>
+            <td class="${t.type}">${t.type === 'income' ? '+' : '-'} Rp${t.amount.toLocaleString('id-ID')}</td>
+            <td><button class="action-btn" onclick="deleteTransaction('${t.id}')"><i class="fas fa-trash"></i></button></td>
+        </tr>
+    `).join('');
 }
-function filterTransactions() { renderTransactions(); }
 
-// Budget Functions
+function filterTransactions() {
+    renderTransactions();
+}
+
+// --- BUDGET FUNCTIONS ---
 function showAddBudgetModal() {
     document.getElementById('addBudgetModal').classList.remove('hidden');
     document.getElementById('budgetForm').reset();
+    
     const mainCategorySelect = document.getElementById('budgetMainCategory');
     mainCategorySelect.innerHTML = '<option value="" disabled selected>Pilih kategori utama</option>';
+    
     expenseCategories.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat.main;
         option.textContent = cat.main;
         mainCategorySelect.appendChild(option);
     });
+    
     const subCategorySelect = document.getElementById('budgetSubCategory');
     subCategorySelect.innerHTML = '<option value="" disabled selected>Pilih sub-kategori</option>';
     subCategorySelect.disabled = true;
 }
-function closeAddBudgetModal() { document.getElementById('addBudgetModal').classList.add('hidden'); }
-function addBudget(e) {
+
+function closeAddBudgetModal() {
+    document.getElementById('addBudgetModal').classList.add('hidden');
+}
+
+async function addBudget(e) {
     e.preventDefault();
+    
     const budget = {
-        id: Date.now(),
         mainCategory: document.getElementById('budgetMainCategory').value,
         subCategory: document.getElementById('budgetSubCategory').value,
         amount: parseFloat(document.getElementById('budgetAmount').value),
         period: document.getElementById('budgetPeriod').value,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    budgets.push(budget);
-    saveData();
-    renderBudgets();
-    closeAddBudgetModal();
+    
+    const budgetId = await saveBudget(budget);
+    
+    if (budgetId) {
+        budgets.push({ id: budgetId, ...budget });
+        updateUI();
+        closeAddBudgetModal();
+    } else {
+        alert('Error saving budget. Please try again.');
+    }
 }
-function deleteBudget(id) { budgets = budgets.filter(b => b.id !== id); saveData(); renderBudgets(); }
+
+async function deleteBudget(id) {
+    if (confirm('Are you sure you want to delete this budget?')) {
+        await deleteBudgetFromFirebase(id);
+        budgets = budgets.filter(b => b.id !== id);
+        updateUI();
+    }
+}
+
 function renderBudgets() {
     const budgetsGrid = document.getElementById('budgetsGrid');
     if(!budgetsGrid) return;
+    
     budgetsGrid.innerHTML = budgets.map(budget => {
-        const spent = transactions.filter(t => t.type === 'expense' && t.subCategory === budget.subCategory).reduce((sum, t) => sum + t.amount, 0);
-        const progress = Math.min((spent / budget.amount) * 100, 100);
+        const spent = transactions
+            .filter(t => t.type === 'expense' && t.subCategory === budget.subCategory)
+            .reduce((sum, t) => sum + t.amount, 0);
+        
+        const progress = budget.amount > 0 ? Math.min((spent / budget.amount) * 100, 100) : 0;
         const progressClass = progress > 80 ? 'high' : progress > 60 ? 'medium' : 'low';
-        return `<div class="budget-card"><div class="budget-card-header"><div class="budget-card-category">${budget.subCategory} <br><small style="color: #888;">${budget.mainCategory}</small></div><button class="delete-budget" onclick="deleteBudget(${budget.id})"><i class="fas fa-trash"></i></button></div><div class="budget-card-amount">Rp${spent.toLocaleString('id-ID')} / Rp${budget.amount.toLocaleString('id-ID')}</div><div class="budget-card-progress"><div class="budget-card-progress-bar ${progressClass}" style="width: ${progress}%"></div></div><div class="budget-card-period">${budget.period === 'monthly' ? 'Monthly' : 'Weekly'}</div></div>`;
+        
+        return `
+            <div class="budget-card">
+                <div class="budget-card-header">
+                    <div class="budget-card-category">${budget.subCategory} <br><small style="color: #888;">${budget.mainCategory}</small></div>
+                    <button class="delete-budget" onclick="deleteBudget('${budget.id}')"><i class="fas fa-trash"></i></button>
+                </div>
+                <div class="budget-card-amount">Rp${spent.toLocaleString('id-ID')} / Rp${budget.amount.toLocaleString('id-ID')}</div>
+                <div class="budget-card-progress">
+                    <div class="budget-card-progress-bar ${progressClass}" style="width: ${progress}%"></div>
+                </div>
+                <div class="budget-card-period">${budget.period === 'monthly' ? 'Monthly' : 'Weekly'}</div>
+            </div>
+        `;
     }).join('');
 }
 
-// Dashboard & Reports
-function updateDashboard() { const totalIncomeEl = document.getElementById('totalIncome'); if(!totalIncomeEl) return; const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0); const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0); const balance = totalIncome - totalExpenses; document.getElementById('totalIncome').textContent = `Rp${totalIncome.toLocaleString('id-ID')}`; document.getElementById('totalExpenses').textContent = `Rp${totalExpenses.toLocaleString('id-ID')}`; document.getElementById('balance').textContent = `Rp${balance.toLocaleString('id-ID')}`; const budgetList = document.getElementById('budgetList'); if(!budgetList) return; budgetList.innerHTML = budgets.map(budget => { const spent = transactions.filter(t => t.type === 'expense' && t.subCategory === budget.subCategory).reduce((sum, t) => sum + t.amount, 0); const progress = Math.min((spent / budget.amount) * 100, 100); const progressClass = progress > 80 ? 'high' : progress > 60 ? 'medium' : 'low'; return `<div class="budget-item"><div class="budget-header"><span class="budget-category">${budget.subCategory}</span><span class="budget-amount">Rp${spent.toLocaleString('id-ID')} / Rp${budget.amount.toLocaleString('id-ID')}</span></div><div class="progress-bar"><div class="progress ${progressClass}" style="width: ${progress}%"></div></div></div>`; }).join(''); }
+// --- DASHBOARD & REPORTS FUNCTIONS ---
+function updateDashboard() {
+    // Update summary cards
+    const totalIncomeEl = document.getElementById('totalIncome');
+    if(!totalIncomeEl) return;
+    
+    const totalIncome = transactions
+        .filter(t => t.type === 'income')
+        .reduce((sum, t) => sum + t.amount, 0);
+    
+    const totalExpenses = transactions
+        .filter(t => t.type === 'expense')
+        .reduce((sum, t) => sum + t.amount, 0);
+    
+    const balance = totalIncome - totalExpenses;
+    
+    document.getElementById('totalIncome').textContent = `Rp${totalIncome.toLocaleString('id-ID')}`;
+    document.getElementById('totalExpenses').textContent = `Rp${totalExpenses.toLocaleString('id-ID')}`;
+    document.getElementById('balance').textContent = `Rp${balance.toLocaleString('id-ID')}`;
+    
+    // Update budget list
+    const budgetList = document.getElementById('budgetList');
+    if(!budgetList) return;
+    
+    budgetList.innerHTML = budgets.map(budget => {
+        const spent = transactions
+            .filter(t => t.type === 'expense' && t.subCategory === budget.subCategory)
+            .reduce((sum, t) => sum + t.amount, 0);
+        
+        const progress = budget.amount > 0 ? Math.min((spent / budget.amount) * 100, 100) : 0;
+        const progressClass = progress > 80 ? 'high' : progress > 60 ? 'medium' : 'low';
+        
+        return `
+            <div class="budget-item">
+                <div class="budget-header">
+                    <span class="budget-category">${budget.subCategory}</span>
+                    <span class="budget-amount">Rp${spent.toLocaleString('id-ID')} / Rp${budget.amount.toLocaleString('id-ID')}</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress ${progressClass}" style="width: ${progress}%"></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
 function updateReports() {
     const incomeReport = document.getElementById('incomeReport');
     if(!incomeReport) return;
-    const incomeData = transactions.filter(t => t.type === 'income').reduce((acc, curr) => { acc[curr.subCategory] = (acc[curr.subCategory] || 0) + curr.amount; return acc; }, {});
-    incomeReport.innerHTML = Object.keys(incomeData).map(category => `<div class="report-item"><span>${category}</span><span>Rp${incomeData[category].toLocaleString('id-ID')}</span></div>`).join('') || "No income data.";
+    
+    const incomeData = transactions
+        .filter(t => t.type === 'income')
+        .reduce((acc, curr) => {
+            acc[curr.subCategory] = (acc[curr.subCategory] || 0) + curr.amount;
+            return acc;
+        }, {});
+    
+    incomeReport.innerHTML = Object.keys(incomeData).map(category => `
+        <div class="report-item">
+            <span>${category}</span>
+            <span>Rp${incomeData[category].toLocaleString('id-ID')}</span>
+        </div>
+    `).join('') || "No income data.";
     
     const expenseReport = document.getElementById('expenseReport');
-    const expenseData = transactions.filter(t => t.type === 'expense').reduce((acc, curr) => { acc[curr.subCategory] = (acc[curr.subCategory] || 0) + curr.amount; return acc; }, {});
-    expenseReport.innerHTML = Object.keys(expenseData).map(category => `<div class="report-item"><span>${category}</span><span>Rp${expenseData[category].toLocaleString('id-ID')}</span></div>`).join('') || "No expense data.";
+    if(!expenseReport) return;
+    
+    const expenseData = transactions
+        .filter(t => t.type === 'expense')
+        .reduce((acc, curr) => {
+            acc[curr.subCategory] = (acc[curr.subCategory] || 0) + curr.amount;
+            return acc;
+        }, {});
+    
+    expenseReport.innerHTML = Object.keys(expenseData).map(category => `
+        <div class="report-item">
+            <span>${category}</span>
+            <span>Rp${expenseData[category].toLocaleString('id-ID')}</span>
+        </div>
+    `).join('') || "No expense data.";
 }
 
-// Data Persistence
-function saveData() { if (currentUser) { localStorage.setItem(`transactions_${currentUser.email}`, JSON.stringify(transactions)); localStorage.setItem(`budgets_${currentUser.email}`, JSON.stringify(budgets)); } }
-function loadSavedData() { if (currentUser) { const savedTransactions = localStorage.getItem(`transactions_${currentUser.email}`); const savedBudgets = localStorage.getItem(`budgets_${currentUser.email}`); transactions = savedTransactions ? JSON.parse(savedTransactions) : []; budgets = savedBudgets ? JSON.parse(savedBudgets) : []; updateUI(); } }
+// --- EXPORT FUNCTION ---
+function exportReport() {
+    const data = {
+        user: currentUser,
+        transactions: transactions,
+        budgets: budgets,
+        exportDate: new Date().toISOString()
+    };
+    
+    const dataStr = JSON.stringify(data, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(dataBlob);
+    link.download = `finance-tracker-export-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+}
