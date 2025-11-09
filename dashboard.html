@@ -10,14 +10,72 @@
 </head>
 <body>
     <div id="app">
-        <!-- ... existing dashboard content ... -->
-    </div>
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-chart-line"></i>
+                    <h1>FinanceTracker</h1>
+                </div>
+                <div class="user-info">
+                    <span id="userName">User Name</span>
+                    <button class="btn-logout" onclick="logout()">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+            </div>
+        </header>
 
-    <!-- TAMBAHKAN FIREBASE SDK DI SINI -->
+        <div class="container">
+            <aside class="sidebar">
+                <nav>
+                    <ul>
+                        <li><a href="dashboard.html" class="active"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+                        <li><a href="transactions.html"><i class="fas fa-exchange-alt"></i> Transactions</a></li>
+                        <li><a href="budgets.html"><i class="fas fa-wallet"></i> Budgets</a></li>
+                        <li><a href="reports.html"><i class="fas fa-file-alt"></i> Reports</a></li>
+                        <li><a href="profile.html"><i class="fas fa-user"></i> Profile</a></li>
+                    </ul>
+                </nav>
+            </aside>
+
+            <main class="main-content">
+                <section id="dashboard" class="tab-content active">
+                    <h2>Financial Dashboard</h2>
+                    <div class="summary-cards">
+                        <div class="card income-card">
+                            <div class="card-icon"><i class="fas fa-arrow-up"></i></div>
+                            <div class="card-content">
+                                <h3>Total Income</h3>
+                                <p id="totalIncome">Rp0</p>
+                            </div>
+                        </div>
+                        <div class="card expense-card">
+                            <div class="card-icon"><i class="fas fa-arrow-down"></i></div>
+                            <div class="card-content">
+                                <h3>Total Expenses</h3>
+                                <p id="totalExpenses">Rp0</p>
+                            </div>
+                        </div>
+                        <div class="card balance-card">
+                            <div class="card-icon"><i class="fas fa-wallet"></i></div>
+                            <div class="card-content">
+                                <h3>Balance</h3>
+                                <p id="balance">Rp0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="budget-section">
+                        <h3>Monthly Budgets</h3>
+                        <div id="budgetList"></div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+    <script src="script.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-    
-    <script src="script.js"></script>
 </body>
 </html>
