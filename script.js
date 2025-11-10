@@ -10,16 +10,22 @@ const firebaseConfig = {
     appId: "your-app-id"
 };
 
-// Initialize Firebase
+// Initialize Firebase dengan error handling
+let auth, db;
+
 try {
-    firebase.initializeApp(firebaseConfig);
+    // Cek apakah Firebase sudah diinisialisasi
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    } else {
+        firebase.app(); // jika sudah ada, gunakan yang existing
+    }
+    auth = firebase.auth();
+    db = firebase.firestore();
+    console.log("Firebase initialized successfully");
 } catch (error) {
-    console.log("Firebase already initialized");
+    console.error("Firebase initialization error:", error);
 }
-
-const auth = firebase.auth();
-const db = firebase.firestore();
-
 // --- STRUKTUR KATEGORI BARU ---
 const incomeCategories = [
     {
@@ -77,8 +83,15 @@ let currentUser = null;
 let transactions = [];
 let budgets = [];
 
-// Initialize the app
+// Initialize the app dengan Firebase ready check
 document.addEventListener('DOMContentLoaded', function() {
+    // Tunggu sampai Firebase siap
+    if (typeof firebase === 'undefined') {
+        console.error("Firebase not loaded!");
+        alert("Error: Firebase not loaded. Please refresh the page.");
+        return;
+    }
+
     // Check Firebase auth state
     auth.onAuthStateChanged(async (user) => {
         if (user) {
@@ -107,7 +120,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Event listeners for transaction form
+    // Event listeners untuk forms (sama seperti sebelumnya)
     if (document.getElementById('transactionForm')) {
         document.getElementById('transactionForm').addEventListener('submit', addTransaction);
         document.getElementById('transactionDate').valueAsDate = new Date();
@@ -115,13 +128,11 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('transactionMainCategory').addEventListener('change', () => populateSubCategoryOptions());
     }
     
-    // Event listeners for budget form
     if (document.getElementById('budgetForm')) {
         document.getElementById('budgetForm').addEventListener('submit', addBudget);
         document.getElementById('budgetMainCategory').addEventListener('change', () => populateSubCategoryOptions('budget'));
     }
     
-    // Event listener for change password form
     if (document.getElementById('changePasswordForm')) {
         document.getElementById('changePasswordForm').addEventListener('submit', handleChangePassword);
     }
@@ -649,3 +660,13 @@ function exportReport() {
     link.download = `finance-tracker-export-${new Date().toISOString().split('T')[0]}.json`;
     link.click();
 }
+
+// GANTI dengan konfigurasi dari project Firebase Anda
+const firebaseConfig = {
+    apiKey: "BFY0qFsD7rltwMGHXjrsYlovU99WVpaLbdipcG10qvWjVK_EcAsGZw9faVxpe55xdZhvQD7tk3LGwPSYaUKGThk",
+    authDomain: "finance-94c76.firebaseapp.com",
+    projectId: "finance-94c76",
+    storageBucket: "finance-94c76.appspot.com",
+    messagingSenderId: "232400233425",
+    appId: "1:1234567890:web:321abc456def7890"
+};
